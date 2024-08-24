@@ -3,10 +3,12 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms as transforms
-from torchvision.models.video import r3d_18
+from torchvision.models.video import r3d_18, R3D_18_Weights
+from PIL import Image
 
-# Load the I3D model (pre-trained on action recognition dataset)
-model = r3d_18(pretrained=True)
+# Load the R3D model (pre-trained on action recognition dataset)
+weights = R3D_18_Weights.KINETICS400_V1
+model = r3d_18(weights=weights)
 model.eval()
 
 # Use GPU if available
@@ -22,14 +24,14 @@ preprocess = transforms.Compose([
 ])
 
 # Define number of frames the model expects as input
-SEQUENCE_LENGTH = 16  # I3D expects a sequence of 16 frames
+SEQUENCE_LENGTH = 16  # R3D expects a sequence of 16 frames
 
 # OAK-D Pipeline for RGB Camera
 pipeline = dai.Pipeline()
 
 # Setup RGB camera node
 cam_rgb = pipeline.create(dai.node.ColorCamera)
-cam_rgb.setBoardSocket(dai.CameraBoardSocket.RGB)
+cam_rgb.setBoardSocket(dai.CameraBoardSocket.CAM_A)  # Updated to avoid the deprecation warning
 cam_rgb.setResolution(dai.ColorCameraProperties.SensorResolution.THE_1080_P)
 cam_rgb.setVideoSize(1080, 720)
 
@@ -44,10 +46,18 @@ video_stream = device_oak.getOutputQueue(name="video", maxSize=4, blocking=False
 
 # Function to preprocess and create a sequence of frames
 def preprocess_frames(frame_list):
-    processed_frames = [preprocess(frame) for frame in frame_list]
+    processed_frames = []
+    for frame in frame_list:
+        # Convert the frame from NumPy array to PIL Image
+        pil_image = Image.fromarray(frame)
+        
+        # Apply the preprocessing transformations
+        processed_frame = preprocess(pil_image)
+        processed_frames.append(processed_frame)
+    
     return torch.stack(processed_frames).unsqueeze(0).to(device)
 
-# Function to run violence detection using I3D model
+# Function to run violence detection using R3D model
 def detect_violence(sequence):
     with torch.no_grad():
         outputs = model(sequence)
